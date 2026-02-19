@@ -61,11 +61,11 @@ impl oio::OneShotDelete for OpfsDeleter {
         match JsFuture::from(parent.remove_entry_with_options(name, &opts)).await {
             Ok(_) => Ok(()),
             Err(e) => {
-                let err_str = format!("{:?}", e);
-                if err_str.contains("NotFoundError") {
+                let err = parse_js_error(e);
+                if err.kind() == ErrorKind::NotFound {
                     Ok(())
                 } else {
-                    Err(parse_js_error(e))
+                    Err(err)
                 }
             }
         }
