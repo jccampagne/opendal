@@ -1,4 +1,5 @@
 {
+  "rust-analyzer.cargo.target": "wasm32-unknown-unknown", ////////////////
   "rust-analyzer.cargo.allTargets": true,
   "rust-analyzer.cargo.features": "all",
   "rust-analyzer.procMacro.ignored": {
@@ -10,7 +11,9 @@
     "${workspaceFolder}/core/Cargo.toml",
     "${workspaceFolder}/bindings/python/Cargo.toml",
     "${workspaceFolder}/bindings/java/Cargo.toml",
-    "${workspaceFolder}/bindings/nodejs/Cargo.toml"
+    "${workspaceFolder}/bindings/nodejs/Cargo.toml",
+    "${workspaceFolder}/core/edge/opfs_wasm32/Cargo.toml",
+    "${workspaceFolder}/core/services/opfs/Cargo.toml"
   ],
   "java.compile.nullAnalysis.mode": "automatic",
   "cmake.ignoreCMakeListsMissing": true,
@@ -21,5 +24,9 @@
     "--clang-tidy",
     "--cross-file-rename=true",
     "--compile-commands-dir=${workspaceFolder}/bindings/cpp/build/"
-  ]
+  ],
+  "rust-analyzer.server.extraEnv": {
+    "PATH": "/opt/homebrew/Cellar/openjdk/25.0.2/bin:${env:PATH}",
+    "JAVA_HOME": "/opt/homebrew/Cellar/openjdk/25.0.2"
+  }
 }

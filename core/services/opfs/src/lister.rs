@@ -15,24 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(target_arch = "wasm32")]
+use std::vec::IntoIter;
 
-/// Default scheme for opfs service.
-pub const OPFS_SCHEME: &str = "opfs";
+use opendal_core::raw::oio;
+use opendal_core::*;
 
-/// Register this service into the given registry.
-pub fn register_opfs_service(registry: &opendal_core::OperatorRegistry) {
-    registry.register::<Opfs>(OPFS_SCHEME);
+pub struct OpfsLister {
+    entries: IntoIter<oio::Entry>,
 }
 
-mod backend;
-mod config;
-mod core;
-mod deleter;
-mod error;
-mod lister;
-mod utils;
-mod writer;
+impl OpfsLister {
+    pub fn new(entries: Vec<oio::Entry>) -> Self {
+        Self {
+            entries: entries.into_iter(),
+        }
+    }
+}
 
-pub use backend::OpfsBuilder as Opfs;
-pub use config::OpfsConfig;
+impl oio::List for OpfsLister {
+    async fn next(&mut self) -> Result<Option<oio::Entry>> {
+        Ok(self.entries.next())
+    }
+}

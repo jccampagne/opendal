@@ -18,11 +18,19 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::JsFuture;
+use web_sys::File;
 use web_sys::FileSystemGetDirectoryOptions;
 
 use super::OPFS_SCHEME;
 use super::config::OpfsConfig;
+use super::deleter::OpfsDeleter;
+use super::error::*;
+use super::lister::OpfsLister;
 use super::utils::*;
+use super::writer::OpfsWriter;
+use opendal_core::raw::oio;
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -45,13 +53,13 @@ impl Builder for OpfsBuilder {
 pub struct OpfsBackend {}
 
 impl Access for OpfsBackend {
-    type Reader = ();
+    type Reader = Buffer;
 
-    type Writer = ();
+    type Writer = oio::OneShotWriter<OpfsWriter>;
 
-    type Lister = ();
+    type Lister = OpfsLister;
 
-    type Deleter = ();
+    type Deleter = oio::OneShotDeleter<OpfsDeleter>;
 
     fn info(&self) -> Arc<AccessorInfo> {
         let info = AccessorInfo::default();
@@ -60,9 +68,96 @@ impl Access for OpfsBackend {
         info.set_root("/");
         info.set_native_capability(Capability {
             create_dir: true,
+
+            list: true,
+            list_with_recursive: true,
+
+            read: true,
+
+            delete: true,
+
+            stat: true,
+
+            write: true,
+
             ..Default::default()
         });
         Arc::new(info)
+    }
+
+    async fn stat(&self, path: &str, _args: OpStat) -> Result<RpStat> {
+        if path.ends_with('/') {
+            // Directory: just check it exists.
+            let dir_opt = FileSystemGetDirectoryOptions::new();
+            dir_opt.set_create(false);
+            get_directory_handle(path, &dir_opt).await?;
+
+            let metadata = Metadata::new(EntryMode::DIR);
+            return Ok(RpStat::new(metadata));
+        }
+
+        // File: get size and last_modified.
+        let handle = get_file_handle(path, false).await?;
+
+        let file: File = JsFuture::from(handle.get_file())
+            .await
+            .and_then(JsCast::dyn_into)
+            .map_err(parse_js_error)?;
+
+        let mut metadata = Metadata::new(EntryMode::FILE);
+        metadata.set_content_length(file.size() as u64);
+
+        if let Ok(t) = Timestamp::from_millisecond(file.last_modified() as i64) {
+            metadata.set_last_modified(t);
+        }
+
+        Ok(RpStat::new(metadata))
+    }
+
+    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
+        let handle = get_file_handle(path, false).await?;
+
+        let file: File = JsFuture::from(handle.get_file())
+            .await
+            .and_then(JsCast::dyn_into)
+            .map_err(parse_js_error)?;
+
+        let array_buffer = JsFuture::from(file.array_buffer())
+            .await
+            .map_err(parse_js_error)?;
+
+        let content = js_sys::Uint8Array::new(&array_buffer).to_vec();
+        let buf = Buffer::from(content);
+        let buf = buf.slice(args.range().to_range_as_usize());
+
+        Ok((RpRead::default(), buf))
+    }
+
+    async fn write(&self, path: &str, _args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
+        let writer = OpfsWriter::new(path.to_string());
+        Ok((RpWrite::default(), oio::OneShotWriter::new(writer)))
+    }
+
+    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
+        Ok((
+            RpDelete::default(),
+            oio::OneShotDeleter::new(OpfsDeleter::new()),
+        ))
+    }
+
+    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
+        let dir_opt = FileSystemGetDirectoryOptions::new();
+        dir_opt.set_create(false);
+        let dir_handle = if path == "/" {
+            get_root_directory_handle().await?
+        } else {
+            get_directory_handle(path, &dir_opt).await?
+        };
+
+        let mut entries = Vec::new();
+        collect_entries(&mut entries, &dir_handle, path, args.recursive()).await?;
+
+        Ok((RpList::default(), OpfsLister::new(entries)))
     }
 
     async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
