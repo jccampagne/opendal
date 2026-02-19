@@ -26,17 +26,20 @@ use opendal_core::*;
 use super::error::*;
 use super::utils::*;
 
-pub struct OpfsDeleter {}
+pub struct OpfsDeleter {
+    root: String,
+}
 
 impl OpfsDeleter {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(root: String) -> Self {
+        Self { root }
     }
 }
 
 impl oio::OneShotDelete for OpfsDeleter {
     async fn delete_once(&self, path: String, _args: OpDelete) -> Result<()> {
-        let path = path.trim_matches('/');
+        let p = build_abs_path(&self.root, &path);
+        let path = p.trim_matches('/');
         let parts: Vec<&str> = path.split('/').collect();
 
         // Get the parent directory handle.

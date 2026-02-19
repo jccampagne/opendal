@@ -15,14 +15,31 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
 use opendal_core::Error;
 use opendal_core::ErrorKind;
 
-pub(crate) fn parse_js_error(msg: JsValue) -> Error {
-    Error::new(
-        ErrorKind::Unexpected,
-        msg.as_string().unwrap_or_else(String::new),
-    )
+pub(crate) fn parse_js_error(val: JsValue) -> Error {
+    let val = match val.dyn_into::<web_sys::DomException>() {
+        Ok(ex) => {
+            let kind = match ex.name().as_str() {
+                "NotFoundError"  => ErrorKind::NotFound,
+                // file instead of directory, vice-versa
+                "TypeMismatchError" => ErrorKind::NotFound,
+                "NotAllowedError" => ErrorKind::PermissionDenied,
+                _ => ErrorKind::Unexpected,
+            };
+            return Error::new(kind, ex.message());
+        }
+        Err(val) => val,
+    };
+
+    let val = match val.dyn_into::<js_sys::Error>() {
+        Ok(err) => return Error::new(ErrorKind::Unexpected, String::from(err.message())),
+        Err(val) => val,
+    };
+
+    Error::new(ErrorKind::Unexpected, format!("{val:?}"))
 }

@@ -62,6 +62,8 @@ pub(crate) async fn get_file_handle(path: &str, create: bool) -> Result<FileSyst
     let path = path.trim_matches('/');
     let parts: Vec<&str> = path.split('/').collect();
 
+    // web_sys::console::log_1(&format!("parts: {:?}", &parts).into());
+
     // Navigate to the parent directory, creating intermediate dirs if needed.
     let mut dir_handle = get_root_directory_handle().await?;
     if parts.len() > 1 {

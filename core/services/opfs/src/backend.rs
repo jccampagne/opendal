@@ -44,60 +44,71 @@ impl Builder for OpfsBuilder {
     type Config = OpfsConfig;
 
     fn build(self) -> Result<impl Access> {
-        Ok(OpfsBackend {})
+        let root = normalize_root(&self.config.root.unwrap_or_default());
+        Ok(OpfsBackend { root })
+    }
+}
+
+impl OpfsBuilder {
+    /// Set root of this backend.
+    ///
+    /// All operations will happen under this root.
+    pub fn root(mut self, root: &str) -> Self {
+        self.config.root = if root.is_empty() {
+            None
+        } else {
+            Some(root.to_string())
+        };
+
+        self
     }
 }
 
 /// OPFS Service backend
 #[derive(Default, Debug, Clone)]
-pub struct OpfsBackend {}
+pub struct OpfsBackend {
+    root: String,
+}
 
 impl Access for OpfsBackend {
     type Reader = Buffer;
-
     type Writer = oio::OneShotWriter<OpfsWriter>;
-
     type Lister = OpfsLister;
-
     type Deleter = oio::OneShotDeleter<OpfsDeleter>;
 
     fn info(&self) -> Arc<AccessorInfo> {
         let info = AccessorInfo::default();
         info.set_scheme(OPFS_SCHEME);
         info.set_name("opfs");
-        info.set_root("/");
+        info.set_root(&self.root);
         info.set_native_capability(Capability {
             create_dir: true,
-
-            list: true,
-            list_with_recursive: true,
-
-            read: true,
-
             delete: true,
-
+            list_with_recursive: true,
+            list: true,
+            read: true,
             stat: true,
-
             write: true,
-
             ..Default::default()
         });
         Arc::new(info)
     }
 
     async fn stat(&self, path: &str, _args: OpStat) -> Result<RpStat> {
+        let p = build_abs_path(&self.root, path);
+
         if path.ends_with('/') {
             // Directory: just check it exists.
             let dir_opt = FileSystemGetDirectoryOptions::new();
             dir_opt.set_create(false);
-            get_directory_handle(path, &dir_opt).await?;
+            get_directory_handle(&p, &dir_opt).await?;
 
             let metadata = Metadata::new(EntryMode::DIR);
             return Ok(RpStat::new(metadata));
         }
 
         // File: get size and last_modified.
-        let handle = get_file_handle(path, false).await?;
+        let handle = get_file_handle(&p, false).await?;
 
         let file: File = JsFuture::from(handle.get_file())
             .await
@@ -115,7 +126,8 @@ impl Access for OpfsBackend {
     }
 
     async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let handle = get_file_handle(path, false).await?;
+        let p = build_abs_path(&self.root, path);
+        let handle = get_file_handle(&p, false).await?;
 
         let file: File = JsFuture::from(handle.get_file())
             .await
@@ -134,24 +146,26 @@ impl Access for OpfsBackend {
     }
 
     async fn write(&self, path: &str, _args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let writer = OpfsWriter::new(path.to_string());
+        let p = build_abs_path(&self.root, path);
+        let writer = OpfsWriter::new(p);
         Ok((RpWrite::default(), oio::OneShotWriter::new(writer)))
     }
 
     async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
         Ok((
             RpDelete::default(),
-            oio::OneShotDeleter::new(OpfsDeleter::new()),
+            oio::OneShotDeleter::new(OpfsDeleter::new(self.root.clone())),
         ))
     }
 
     async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
+        let p = build_abs_path(&self.root, path);
         let dir_opt = FileSystemGetDirectoryOptions::new();
         dir_opt.set_create(false);
-        let dir_handle = if path == "/" {
+        let dir_handle = if p == "/" {
             get_root_directory_handle().await?
         } else {
-            get_directory_handle(path, &dir_opt).await?
+            get_directory_handle(&p, &dir_opt).await?
         };
 
         let mut entries = Vec::new();
@@ -161,9 +175,10 @@ impl Access for OpfsBackend {
     }
 
     async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
+        let p = build_abs_path(&self.root, path);
         let opt = FileSystemGetDirectoryOptions::new();
         opt.set_create(true);
-        get_directory_handle(path, &opt).await?;
+        get_directory_handle(&p, &opt).await?;
 
         Ok(RpCreateDir::default())
     }
