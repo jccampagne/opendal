@@ -15,25 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![cfg(target_arch = "wasm32")]
+use opendal_core::raw::oio;
+use opendal_core::*;
 
-/// Default scheme for opfs service.
-pub const OPFS_SCHEME: &str = "opfs";
-
-/// Register this service into the given registry.
-pub fn register_opfs_service(registry: &opendal_core::OperatorRegistry) {
-    registry.register::<Opfs>(OPFS_SCHEME);
+pub struct OpfsReader {
+    buf: Option<Buffer>,
 }
 
-mod backend;
-mod config;
-mod core;
-mod deleter;
-mod error;
-mod lister;
-mod reader;
-mod utils;
-mod writer;
+impl OpfsReader {
+    pub fn new(buf: Buffer) -> Self {
+        Self { buf: Some(buf) }
+    }
+}
 
-pub use backend::OpfsBuilder as Opfs;
-pub use config::OpfsConfig;
+impl oio::Read for OpfsReader {
+    async fn read(&mut self) -> Result<Buffer> {
+        Ok(self.buf.take().unwrap_or_default())
+    }
+}

@@ -35,15 +35,22 @@ pub(crate) async fn get_root_directory_handle() -> Result<FileSystemDirectoryHan
         .map_err(parse_js_error)
 }
 
+/// Navigate to a directory by path, optionally creating intermediate directories.
 pub(crate) async fn get_directory_handle(
     dir: &str,
-    dir_opt: &FileSystemGetDirectoryOptions,
+    create: bool,
 ) -> Result<FileSystemDirectoryHandle> {
-    let dirs: Vec<&str> = dir.trim_matches('/').split('/').collect();
+    let trimmed = dir.trim_matches('/');
+    if trimmed.is_empty() {
+        return get_root_directory_handle().await;
+    }
+
+    let opt = FileSystemGetDirectoryOptions::new();
+    opt.set_create(create);
 
     let mut handle = get_root_directory_handle().await?;
-    for dir in dirs {
-        handle = JsFuture::from(handle.get_directory_handle_with_options(dir, dir_opt))
+    for segment in trimmed.split('/') {
+        handle = JsFuture::from(handle.get_directory_handle_with_options(segment, &opt))
             .await
             .and_then(JsCast::dyn_into)
             .map_err(parse_js_error)?;
@@ -52,19 +59,50 @@ pub(crate) async fn get_directory_handle(
     Ok(handle)
 }
 
-pub(crate) async fn get_handle_by_filename(filename: &str) -> Result<FileSystemFileHandle> {
-    let navigator = window().unwrap().navigator();
-    let storage_manager = navigator.storage();
-    let root: FileSystemDirectoryHandle = JsFuture::from(storage_manager.get_directory())
-        .await
-        .and_then(JsCast::dyn_into)
-        .map_err(parse_js_error)?;
+/// Split a path into (parent_dir, name).
+/// "a/b/c.txt" -> ("a/b", "c.txt")
+/// "file.txt" -> ("", "file.txt")
+pub(crate) fn split_path(path: &str) -> (&str, &str) {
+    let path = path.trim_matches('/');
+    match path.rsplit_once('/') {
+        Some((parent, name)) => (parent, name),
+        None => ("", path),
+    }
+}
+
+/// Get a file handle at an arbitrary path, optionally creating parent dirs and the file.
+pub(crate) async fn get_file_handle(
+    path: &str,
+    create: bool,
+) -> Result<FileSystemFileHandle> {
+    let (parent, name) = split_path(path);
+
+    let dir_handle = if parent.is_empty() {
+        get_root_directory_handle().await?
+    } else {
+        get_directory_handle(parent, create).await?
+    };
 
     let opt = FileSystemGetFileOptions::new();
-    opt.set_create(true);
+    opt.set_create(create);
 
-    JsFuture::from(root.get_file_handle_with_options(filename, &opt))
+    JsFuture::from(dir_handle.get_file_handle_with_options(name, &opt))
         .await
         .and_then(JsCast::dyn_into)
         .map_err(parse_js_error)
+}
+
+/// Get the parent directory handle for a given path.
+pub(crate) async fn get_parent_handle(
+    path: &str,
+) -> Result<(FileSystemDirectoryHandle, String)> {
+    let (parent, name) = split_path(path);
+
+    let dir_handle = if parent.is_empty() {
+        get_root_directory_handle().await?
+    } else {
+        get_directory_handle(parent, false).await?
+    };
+
+    Ok((dir_handle, name.to_string()))
 }

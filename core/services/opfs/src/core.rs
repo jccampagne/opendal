@@ -15,59 +15,72 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::fmt::Debug;
-
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::File;
-use web_sys::FileSystemWritableFileStream;
 
-use opendal_core::Error;
-use opendal_core::Result;
+use opendal_core::raw::*;
+use opendal_core::*;
 
 use super::error::*;
 use super::utils::*;
 
-#[derive(Default, Debug)]
-pub struct OpfsCore {}
+pub async fn opfs_stat(path: &str) -> Result<Metadata> {
+    if path == "/" || path.ends_with('/') {
+        // For directories, just verify it exists by getting the handle.
+        let trimmed = path.trim_matches('/');
+        if trimmed.is_empty() {
+            // Root always exists.
+            return Ok(Metadata::new(EntryMode::DIR));
+        }
+        get_directory_handle(trimmed, false).await?;
+        return Ok(Metadata::new(EntryMode::DIR));
+    }
 
-impl OpfsCore {
-    #[allow(unused)]
-    async fn store_file(&self, file_name: &str, content: &[u8]) -> Result<(), Error> {
-        let handle = get_handle_by_filename(file_name).await?;
-
-        let writable: FileSystemWritableFileStream = JsFuture::from(handle.create_writable())
-            .await
-            .and_then(JsCast::dyn_into)
-            .map_err(parse_js_error)?;
-
-        JsFuture::from(
-            writable
-                .write_with_u8_array(content)
-                .map_err(parse_js_error)?,
-        )
+    let handle = get_file_handle(path, false).await?;
+    let file: File = JsFuture::from(handle.get_file())
         .await
+        .and_then(JsCast::dyn_into)
         .map_err(parse_js_error)?;
 
-        JsFuture::from(writable.close())
-            .await
-            .map_err(parse_js_error)?;
-
-        Ok(())
+    let size = file.size() as u64;
+    let last_modified_ms = file.last_modified() as i64;
+    let mut meta = Metadata::new(EntryMode::FILE).with_content_length(size);
+    if let Ok(ts) = Timestamp::from_millisecond(last_modified_ms) {
+        meta = meta.with_last_modified(ts);
     }
+    Ok(meta)
+}
 
-    #[allow(unused)]
-    async fn read_file(&self, file_name: &str) -> Result<Vec<u8>, Error> {
-        let handle = get_handle_by_filename(file_name).await?;
+pub async fn opfs_read(path: &str) -> Result<Buffer> {
+    let handle = get_file_handle(path, false).await?;
+    let file: File = JsFuture::from(handle.get_file())
+        .await
+        .and_then(JsCast::dyn_into)
+        .map_err(parse_js_error)?;
+    let array_buffer = JsFuture::from(file.array_buffer())
+        .await
+        .map_err(parse_js_error)?;
+    let bytes = js_sys::Uint8Array::new(&array_buffer).to_vec();
+    Ok(Buffer::from(bytes))
+}
 
-        let file: File = JsFuture::from(handle.get_file())
-            .await
+pub async fn opfs_list(path: &str) -> Result<js_sys::AsyncIterator> {
+    let trimmed = path.trim_matches('/');
+    let dir_handle = if trimmed.is_empty() {
+        get_root_directory_handle().await?
+    } else {
+        get_directory_handle(trimmed, false).await?
+    };
+
+    // Call entries() on the directory handle via JS reflection.
+    let entries_fn: js_sys::Function =
+        js_sys::Reflect::get(dir_handle.as_ref(), &"entries".into())
             .and_then(JsCast::dyn_into)
             .map_err(parse_js_error)?;
-        let array_buffer = JsFuture::from(file.array_buffer())
-            .await
-            .map_err(parse_js_error)?;
 
-        Ok(js_sys::Uint8Array::new(&array_buffer).to_vec())
-    }
+    entries_fn
+        .call0(dir_handle.as_ref())
+        .and_then(JsCast::dyn_into)
+        .map_err(parse_js_error)
 }

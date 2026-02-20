@@ -20,9 +20,32 @@ use wasm_bindgen::JsValue;
 use opendal_core::Error;
 use opendal_core::ErrorKind;
 
-pub(crate) fn parse_js_error(msg: JsValue) -> Error {
-    Error::new(
-        ErrorKind::Unexpected,
-        msg.as_string().unwrap_or_else(String::new),
-    )
+pub fn console_debug(s: &impl std::fmt::Debug) {
+    web_sys::console::log_1(&format!("value: {:?}", s).into())
+    // web_sys::console::log_1(&format!("value: {:?}", res).into())
+    // web_sys::console::log_1(.);
+}
+
+pub(crate) fn parse_js_error(value: JsValue) -> Error {
+    let kind = js_sys::Reflect::get(&value, &"name".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .map(|name| match name.as_str() {
+            "NotFoundError" => ErrorKind::NotFound,
+            "NotAllowedError" => ErrorKind::PermissionDenied,
+            "TypeMismatchError" => ErrorKind::IsADirectory,
+            _ => ErrorKind::Unexpected,
+        })
+        .unwrap_or(ErrorKind::Unexpected);
+
+    let message = value
+        .as_string()
+        .or_else(|| {
+            js_sys::Reflect::get(&value, &"message".into())
+                .ok()
+                .and_then(|v| v.as_string())
+        })
+        .unwrap_or_default();
+
+    Error::new(kind, message)
 }
