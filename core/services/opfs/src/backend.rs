@@ -39,13 +39,16 @@ impl Builder for OpfsBuilder {
     type Config = OpfsConfig;
 
     fn build(self) -> Result<impl Access> {
-        Ok(OpfsBackend {})
+        let root = normalize_root(&self.config.root.unwrap_or_default());
+        Ok(OpfsBackend { root })
     }
 }
 
 /// OPFS Service backend
-#[derive(Default, Debug, Clone)]
-pub struct OpfsBackend {}
+#[derive(Debug, Clone)]
+pub struct OpfsBackend {
+    root: String,
+}
 
 impl Access for OpfsBackend {
     type Reader = OpfsReader;
@@ -57,7 +60,7 @@ impl Access for OpfsBackend {
         let info = AccessorInfo::default();
         info.set_scheme(OPFS_SCHEME);
         info.set_name("opfs");
-        info.set_root("/");
+        info.set_root(&self.root);
         info.set_native_capability(Capability {
             stat: true,
             read: true,
@@ -72,33 +75,40 @@ impl Access for OpfsBackend {
     }
 
     async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
-        get_directory_handle(path.trim_matches('/'), true).await?;
+        let rooted = build_rooted_abs_path(&self.root, path);
+        get_directory_handle(rooted.trim_matches('/'), true).await?;
         Ok(RpCreateDir::default())
     }
 
     async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
-        let meta = opfs_stat(path).await?;
+        let rooted = build_rooted_abs_path(&self.root, path);
+        let meta = opfs_stat(&rooted).await?;
         Ok(RpStat::new(meta))
     }
 
     async fn read(&self, path: &str, _args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let buf = opfs_read(path).await?;
+        let rooted = build_rooted_abs_path(&self.root, path);
+        let buf = opfs_read(&rooted).await?;
         Ok((RpRead::new(), OpfsReader::new(buf)))
     }
 
     async fn write(&self, path: &str, _op: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        Ok((RpWrite::default(), OpfsWriter::new(path)))
+        let rooted = build_rooted_abs_path(&self.root, path);
+        Ok((RpWrite::default(), OpfsWriter::new(&rooted)))
     }
 
     async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
         Ok((
             RpDelete::default(),
-            oio::OneShotDeleter::new(OpfsDeleter {}),
+            oio::OneShotDeleter::new(OpfsDeleter {
+                root: self.root.clone(),
+            }),
         ))
     }
 
     async fn list(&self, path: &str, _: OpList) -> Result<(RpList, Self::Lister)> {
-        match opfs_list(path).await {
+        let rooted = build_rooted_abs_path(&self.root, path);
+        match opfs_list(&rooted).await {
             Ok(iterator) => {
                 let lister = OpfsLister::new(path, iterator);
                 Ok((RpList::default(), Some(lister)))

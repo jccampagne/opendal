@@ -24,11 +24,14 @@ use opendal_core::raw::oio;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-pub struct OpfsDeleter {}
+pub struct OpfsDeleter {
+    pub(super) root: String,
+}
 
 impl oio::OneShotDelete for OpfsDeleter {
     async fn delete_once(&self, path: String, _args: OpDelete) -> Result<()> {
-        let (parent_handle, name) = match get_parent_handle(&path).await {
+        let rooted = build_rooted_abs_path(&self.root, &path);
+        let (parent_handle, name) = match get_parent_handle(&rooted).await {
             Ok(v) => v,
             Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
             Err(e) => return Err(e),

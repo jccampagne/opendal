@@ -39,7 +39,7 @@ pub(crate) fn parse_js_error(value: JsValue) -> Error {
         .ok()
         .and_then(|v| v.as_string())
         .map(|name| {
-            console_fmt("{:?}", &name);
+            console_fmt("error: {:?}", &name);
             match name.as_str() {
                 "NotFoundError" => ErrorKind::NotFound,
                 "NotAllowedError" => ErrorKind::PermissionDenied,

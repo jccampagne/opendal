@@ -15,10 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use js_sys::Object;
+use js_sys::Reflect;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::File;
 use web_sys::FileSystemWritableFileStream;
+use web_sys::WriteParams;
 
 use super::error::*;
 use super::utils::*;
@@ -42,6 +46,7 @@ impl OpfsWriter {
 
 impl oio::Write for OpfsWriter {
     async fn write(&mut self, bs: Buffer) -> Result<()> {
+        console_fmt("write to pathx = {:?}", &self.path);
         console_fmt("bs = {:?}", &bs);
         let buf = self.buffer.get_or_insert_with(Vec::new);
         buf.extend_from_slice(&bs.to_vec());
@@ -58,37 +63,13 @@ impl oio::Write for OpfsWriter {
             .and_then(JsCast::dyn_into)
             .map_err(parse_js_error)?;
 
-        {
-            use js_sys::Object;
-            use js_sys::Reflect;
-            use wasm_bindgen::JsValue;
-            use web_sys::WriteParams;
-
-            console_fmt("{}", &"writing again with params... ");
-            let size = content.len() as u32;
-            console_fmt("size = {}", &size);
-            let params = WriteParams::new(web_sys::WriteCommandType::Write);
-            console_fmt("params = {}", &params);
-            // params.set_type();
-            params.set_size(Some(content.len() as f64));
-            console_fmt("params = {}", &params);
-
-            let js_value: &JsValue = &content.into();
-            params.set_data(&js_value);
-
-            // Copy data into a JS-owned Uint8Array. Using write_with_u8_array
-            // directly passes a view into WASM linear memory, which Safari
-            // can invalidate during the async write, producing corrupted data.
-            // let js_buf = js_sys::Uint8Array::new_with_length(content.len() as u32);
-            // js_buf.copy_from(&content);
-            // params.set_data(&js_buf);
-
-            console_fmt("params = {}", &params);
-
-            // writable is a FileSystemWritableFileStream
-            //   writable.write_with_write_params(data)
-            let promise = writable.write_with_write_params(&params.into());
-        }
+        let size = content.len() as u32;
+        let params = WriteParams::new(web_sys::WriteCommandType::Write);
+        params.set_size(Some(content.len() as f64));
+        let js_value: &JsValue = &content.into();
+        params.set_data(&js_value);
+        console_fmt("writing with params = {}", &params);
+        let promise = writable.write_with_write_params(&params.into());
 
         JsFuture::from(writable.close())
             .await
