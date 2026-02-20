@@ -24,8 +24,6 @@ use opendal_core::*;
 pub struct OpfsLister {
     /// The directory path being listed (e.g. "test-list/").
     path: String,
-    /// Whether we've returned the directory entry itself yet.
-    returned_self: bool,
     iterator: js_sys::AsyncIterator,
 }
 
@@ -37,7 +35,6 @@ impl OpfsLister {
     pub fn new(path: &str, iterator: js_sys::AsyncIterator) -> Self {
         Self {
             path: path.to_string(),
-            returned_self: false,
             iterator,
         }
     }
@@ -45,12 +42,6 @@ impl OpfsLister {
 
 impl oio::List for OpfsLister {
     async fn next(&mut self) -> Result<Option<oio::Entry>> {
-        if !self.returned_self {
-            self.returned_self = true;
-            let e = oio::Entry::new(&self.path, Metadata::new(EntryMode::DIR));
-            return Ok(Some(e));
-        }
-
         let promise = self.iterator.next().map_err(parse_js_error)?;
         let result = JsFuture::from(promise).await.map_err(parse_js_error)?;
 

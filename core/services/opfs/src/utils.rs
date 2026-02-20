@@ -59,6 +59,8 @@ pub(crate) async fn get_directory_handle(
     Ok(handle)
 }
 
+/// OPFS does not do subdirectory creation. We have to do it ourselves.
+///
 /// Split a path into (parent_dir, name).
 /// "a/b/c.txt" -> ("a/b", "c.txt")
 /// "file.txt" -> ("", "file.txt")
@@ -71,10 +73,7 @@ pub(crate) fn split_path(path: &str) -> (&str, &str) {
 }
 
 /// Get a file handle at an arbitrary path, optionally creating parent dirs and the file.
-pub(crate) async fn get_file_handle(
-    path: &str,
-    create: bool,
-) -> Result<FileSystemFileHandle> {
+pub(crate) async fn get_file_handle(path: &str, create: bool) -> Result<FileSystemFileHandle> {
     let (parent, name) = split_path(path);
 
     let dir_handle = if parent.is_empty() {
@@ -93,9 +92,7 @@ pub(crate) async fn get_file_handle(
 }
 
 /// Get the parent directory handle for a given path.
-pub(crate) async fn get_parent_handle(
-    path: &str,
-) -> Result<(FileSystemDirectoryHandle, String)> {
+pub(crate) async fn get_parent_handle(path: &str) -> Result<(FileSystemDirectoryHandle, String)> {
     let (parent, name) = split_path(path);
 
     let dir_handle = if parent.is_empty() {

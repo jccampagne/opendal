@@ -55,9 +55,7 @@ impl oio::Write for OpfsWriter {
 
     async fn close(&mut self) -> Result<Metadata> {
         let content = self.buffer.take().unwrap_or_default();
-
         let handle = get_file_handle(&self.path, true).await?;
-
         let writable: FileSystemWritableFileStream = JsFuture::from(handle.create_writable())
             .await
             .and_then(JsCast::dyn_into)

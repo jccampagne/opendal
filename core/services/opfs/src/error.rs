@@ -15,48 +15,46 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 
 use opendal_core::Error;
 use opendal_core::ErrorKind;
 
-// pub fn console_fmt(f: &str, s: &impl std::fmt::Debug) {
-//     web_sys::console::log_1(&format!(f, s).into())
-// }
-
 pub fn console_fmt(f: &str, s: &impl std::fmt::Debug) {
     web_sys::console::log_1(&format!("{f}: {s:?}").into());
 }
 
-// pub fn console_debug(s: &impl std::fmt::Debug) {
-//     web_sys::console::log_1(&format!("value: {:?}", s).into())
-//     // web_sys::console::log_1(&format!("value: {:?}", res).into())
-//     // web_sys::console::log_1(.);
-// }
-
 pub(crate) fn parse_js_error(value: JsValue) -> Error {
-    let kind = js_sys::Reflect::get(&value, &"name".into())
-        .ok()
-        .and_then(|v| v.as_string())
-        .map(|name| {
-            console_fmt("error: {:?}", &name);
-            match name.as_str() {
-                "NotFoundError" => ErrorKind::NotFound,
-                "NotAllowedError" => ErrorKind::PermissionDenied,
-                "TypeMismatchError" => ErrorKind::IsADirectory,
-                _ => ErrorKind::Unexpected,
-            }
-        })
-        .unwrap_or(ErrorKind::Unexpected);
+    let (name, message) = if let Some(js_err) = value.dyn_ref::<js_sys::Error>() {
+        (js_err.name().into(), js_err.message().into())
+    } else {
+        let name = js_sys::Reflect::get(&value, &"name".into())
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_else(|| "UnknownError".to_string());
 
-    let message = value
-        .as_string()
-        .or_else(|| {
-            js_sys::Reflect::get(&value, &"message".into())
-                .ok()
-                .and_then(|v| v.as_string())
-        })
-        .unwrap_or_default();
+        let message = value
+            .as_string()
+            .or_else(|| {
+                js_sys::Reflect::get(&value, &"message".into())
+                    .ok()?
+                    .as_string()
+            })
+            .unwrap_or_else(|| format!("{:?}", value));
 
-    Error::new(kind, message)
+        (name, message)
+    };
+
+    let kind = match name.as_str() {
+        "NotFoundError" => ErrorKind::NotFound,
+        "NotAllowedError" => ErrorKind::PermissionDenied,
+        "TypeMismatchError" => ErrorKind::IsADirectory,
+        "SecurityError" => ErrorKind::PermissionDenied,
+        "QuotaExceededError" => ErrorKind::RateLimited, //? is that ok?
+        // "NoModificationAllowedError" => ....
+        _ => ErrorKind::Unexpected,
+    };
+
+    Error::new(kind, &message)
 }
