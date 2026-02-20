@@ -42,6 +42,7 @@ impl OpfsWriter {
 
 impl oio::Write for OpfsWriter {
     async fn write(&mut self, bs: Buffer) -> Result<()> {
+        console_fmt("bs = {:?}", &bs);
         let buf = self.buffer.get_or_insert_with(Vec::new);
         buf.extend_from_slice(&bs.to_vec());
         Ok(())
@@ -57,13 +58,78 @@ impl oio::Write for OpfsWriter {
             .and_then(JsCast::dyn_into)
             .map_err(parse_js_error)?;
 
-        JsFuture::from(
-            writable
-                .write_with_u8_array(&content)
-                .map_err(parse_js_error)?,
-        )
-        .await
-        .map_err(parse_js_error)?;
+        // JsFuture::from(
+        //     writable
+        //         .write_with_u8_array(&content)
+        //         .map_err(parse_js_error)?,
+        // )
+        // .await
+        // .map_err(parse_js_error)?;
+
+        // {
+        //     let size = content.len() as u32;
+        //     console_fmt("truncating to size = {:?}", &size);
+        //     JsFuture::from(writable.truncate_with_u32(size).map_err(parse_js_error)?)
+        //         .await
+        //         .map_err(parse_js_error)?;
+        // }
+
+        // {
+        //     console_fmt("{}", &"writing again... ");
+        //     JsFuture::from(
+        //         writable
+        //             .write_with_u8_array(&content)
+        //             .map_err(parse_js_error)?,
+        //     )
+        //     .await
+        //     .map_err(parse_js_error)?;
+        // }
+
+        // {
+        //     let size = content.len() as u32;
+        //     console_fmt("truncating to size = {:?}", &size);
+        //     JsFuture::from(writable.truncate_with_u32(size).map_err(parse_js_error)?)
+        //         .await
+        //         .map_err(parse_js_error)?;
+        // }
+
+        // {
+        //     console_fmt("{}", &"writing again... ");
+        //     JsFuture::from(
+        //         writable
+        //             .write_with_u8_array(&content)
+        //             .map_err(parse_js_error)?,
+        //     )
+        //     .await
+        //     .map_err(parse_js_error)?;
+        // }
+
+        {
+            use js_sys::Object;
+            use js_sys::Reflect;
+            use wasm_bindgen::JsValue;
+            use web_sys::WriteParams;
+
+            console_fmt("{}", &"writing again with params... ");
+            let size = content.len() as u32;
+            console_fmt("size = {}", &size);
+            let params = WriteParams::new(web_sys::WriteCommandType::Truncate);
+            console_fmt("params = {}", &params);
+            // params.set_type();
+            params.set_size(Some(content.len() as f64));
+            console_fmt("params = {}", &params);
+
+            let js_value: &JsValue = &content.into();
+
+
+
+            params.set_data(js_value);
+            console_fmt("params = {}", &params);
+
+            // writable is a FileSystemWritableFileStream
+            //   writable.write_with_write_params(data)
+            let promise = writable.write_with_write_params(&params.into());
+        }
 
         JsFuture::from(writable.close())
             .await
@@ -75,6 +141,8 @@ impl oio::Write for OpfsWriter {
             .map_err(parse_js_error)?;
 
         let size = file.size() as u64;
+
+        console_fmt("size = {:?}", &size);
         let last_modified_ms = file.last_modified() as i64;
         let mut meta = Metadata::new(EntryMode::FILE).with_content_length(size);
         if let Ok(ts) = Timestamp::from_millisecond(last_modified_ms) {

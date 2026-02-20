@@ -20,21 +20,32 @@ use wasm_bindgen::JsValue;
 use opendal_core::Error;
 use opendal_core::ErrorKind;
 
-pub fn console_debug(s: &impl std::fmt::Debug) {
-    web_sys::console::log_1(&format!("value: {:?}", s).into())
-    // web_sys::console::log_1(&format!("value: {:?}", res).into())
-    // web_sys::console::log_1(.);
+// pub fn console_fmt(f: &str, s: &impl std::fmt::Debug) {
+//     web_sys::console::log_1(&format!(f, s).into())
+// }
+
+pub fn console_fmt(f: &str, s: &impl std::fmt::Debug) {
+    web_sys::console::log_1(&format!("{f}: {s:?}").into());
 }
+
+// pub fn console_debug(s: &impl std::fmt::Debug) {
+//     web_sys::console::log_1(&format!("value: {:?}", s).into())
+//     // web_sys::console::log_1(&format!("value: {:?}", res).into())
+//     // web_sys::console::log_1(.);
+// }
 
 pub(crate) fn parse_js_error(value: JsValue) -> Error {
     let kind = js_sys::Reflect::get(&value, &"name".into())
         .ok()
         .and_then(|v| v.as_string())
-        .map(|name| match name.as_str() {
-            "NotFoundError" => ErrorKind::NotFound,
-            "NotAllowedError" => ErrorKind::PermissionDenied,
-            "TypeMismatchError" => ErrorKind::IsADirectory,
-            _ => ErrorKind::Unexpected,
+        .map(|name| {
+            console_fmt("{:?}", &name);
+            match name.as_str() {
+                "NotFoundError" => ErrorKind::NotFound,
+                "NotAllowedError" => ErrorKind::PermissionDenied,
+                "TypeMismatchError" => ErrorKind::IsADirectory,
+                _ => ErrorKind::Unexpected,
+            }
         })
         .unwrap_or(ErrorKind::Unexpected);
 
