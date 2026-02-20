@@ -58,52 +58,6 @@ impl oio::Write for OpfsWriter {
             .and_then(JsCast::dyn_into)
             .map_err(parse_js_error)?;
 
-        // JsFuture::from(
-        //     writable
-        //         .write_with_u8_array(&content)
-        //         .map_err(parse_js_error)?,
-        // )
-        // .await
-        // .map_err(parse_js_error)?;
-
-        // {
-        //     let size = content.len() as u32;
-        //     console_fmt("truncating to size = {:?}", &size);
-        //     JsFuture::from(writable.truncate_with_u32(size).map_err(parse_js_error)?)
-        //         .await
-        //         .map_err(parse_js_error)?;
-        // }
-
-        // {
-        //     console_fmt("{}", &"writing again... ");
-        //     JsFuture::from(
-        //         writable
-        //             .write_with_u8_array(&content)
-        //             .map_err(parse_js_error)?,
-        //     )
-        //     .await
-        //     .map_err(parse_js_error)?;
-        // }
-
-        // {
-        //     let size = content.len() as u32;
-        //     console_fmt("truncating to size = {:?}", &size);
-        //     JsFuture::from(writable.truncate_with_u32(size).map_err(parse_js_error)?)
-        //         .await
-        //         .map_err(parse_js_error)?;
-        // }
-
-        // {
-        //     console_fmt("{}", &"writing again... ");
-        //     JsFuture::from(
-        //         writable
-        //             .write_with_u8_array(&content)
-        //             .map_err(parse_js_error)?,
-        //     )
-        //     .await
-        //     .map_err(parse_js_error)?;
-        // }
-
         {
             use js_sys::Object;
             use js_sys::Reflect;
@@ -113,17 +67,22 @@ impl oio::Write for OpfsWriter {
             console_fmt("{}", &"writing again with params... ");
             let size = content.len() as u32;
             console_fmt("size = {}", &size);
-            let params = WriteParams::new(web_sys::WriteCommandType::Truncate);
+            let params = WriteParams::new(web_sys::WriteCommandType::Write);
             console_fmt("params = {}", &params);
             // params.set_type();
             params.set_size(Some(content.len() as f64));
             console_fmt("params = {}", &params);
 
             let js_value: &JsValue = &content.into();
+            params.set_data(&js_value);
 
+            // Copy data into a JS-owned Uint8Array. Using write_with_u8_array
+            // directly passes a view into WASM linear memory, which Safari
+            // can invalidate during the async write, producing corrupted data.
+            // let js_buf = js_sys::Uint8Array::new_with_length(content.len() as u32);
+            // js_buf.copy_from(&content);
+            // params.set_data(&js_buf);
 
-
-            params.set_data(js_value);
             console_fmt("params = {}", &params);
 
             // writable is a FileSystemWritableFileStream
