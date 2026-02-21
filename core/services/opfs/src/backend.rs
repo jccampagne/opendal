@@ -81,6 +81,8 @@ impl Access for OpfsBackend {
     }
 
     async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+        console_log!("opfs_stat stat path = {path}!!!!!!!!!!!!!!!!!!!!!!!!");
+
         let rooted = build_rooted_abs_path(&self.root, path);
         let meta = opfs_stat(&rooted).await?;
         Ok(RpStat::new(meta))

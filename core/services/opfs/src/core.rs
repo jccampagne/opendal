@@ -26,6 +26,10 @@ use super::error::*;
 use super::utils::*;
 
 pub async fn opfs_stat(path: &str) -> Result<Metadata> {
+    // This is technically not needed because of the Simulate Layer
+    // handling the root ("/") for now.
+    // see [`core/core/src/docs/rfcs/6678_simulate_layer.md`]
+    // it's been tested though by manually disabling the SimulateLayer
     if path == "/" || path.ends_with('/') {
         // For directories, just verify it exists by getting the handle.
         let trimmed = path.trim_matches('/');
@@ -74,10 +78,9 @@ pub async fn opfs_list(path: &str) -> Result<js_sys::AsyncIterator> {
     };
 
     // Call entries() on the directory handle via JS reflection.
-    let entries_fn: js_sys::Function =
-        js_sys::Reflect::get(dir_handle.as_ref(), &"entries".into())
-            .and_then(JsCast::dyn_into)
-            .map_err(parse_js_error)?;
+    let entries_fn: js_sys::Function = js_sys::Reflect::get(dir_handle.as_ref(), &"entries".into())
+        .and_then(JsCast::dyn_into)
+        .map_err(parse_js_error)?;
 
     entries_fn
         .call0(dir_handle.as_ref())

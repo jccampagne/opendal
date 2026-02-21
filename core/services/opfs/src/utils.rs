@@ -26,6 +26,8 @@ use web_sys::window;
 
 use super::error::*;
 
+/// Returns the root of OPFS
+/// https://developer.mozilla.org/en-US/docs/Web/API/StorageManager/getDirectory
 pub(crate) async fn get_root_directory_handle() -> Result<FileSystemDirectoryHandle> {
     let navigator = window().unwrap().navigator();
     let storage_manager = navigator.storage();
@@ -73,7 +75,11 @@ pub(crate) fn split_path(path: &str) -> (&str, &str) {
 }
 
 /// Get a file handle at an arbitrary path, optionally creating parent dirs and the file.
+/// `path` must be a file, it cannot be a directory.
 pub(crate) async fn get_file_handle(path: &str, create: bool) -> Result<FileSystemFileHandle> {
+    debug_assert!(!path.ends_with('/'), "cannot be a directory");
+    debug_assert!(path != "/", "cannot be root");
+
     let (parent, name) = split_path(path);
 
     let dir_handle = if parent.is_empty() {
